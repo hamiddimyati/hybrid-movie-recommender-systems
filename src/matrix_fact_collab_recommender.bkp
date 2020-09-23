@@ -1,0 +1,82 @@
+import pandas as pd
+import numpy as np
+from surprise import SVD, Reader, Dataset
+#from scipy.sparse.linalg import svds
+###################################################################################
+#  Public API
+###################################################################################
+def train_mf(data, catalog):
+    model = MatrixFactorizationCollabRecommender()
+    model.train(data, catalog)
+    return model 
+
+def predict_mf(model, test, train):
+    return model.predict(test)
+
+###################################################################################
+#  Helper Functions
+###################################################################################
+class MatrixFactorizationCollabRecommender():
+
+    def train(self, data, catalog):
+        self.data = data 
+        self.catalog = catalog
+        reader = Reader(rating_scale=(1, 5))
+        model_data = Dataset.load_from_df(data.drop('timestamp', axis=1), reader=reader).build_full_trainset()
+        
+        self.model = SVD()
+        self.model.fit(model_data)
+
+
+        '''
+        self.ratings_df = data.pivot(index = 'userID', columns ='itemID', values = 'rating').fillna(0)
+        self.ratings = self.ratings_df.values
+        self.user_ratings_mean = np.mean(self.ratings, axis = 1)
+        self.ratings = self.ratings - self.user_ratings_mean.reshape(-1, 1)
+        '''
+        
+    def predict(self, test):
+        
+        preds_lst = []
+        for user in self.data['userID'].unique():
+            for item in self.data['itemID'].unique():
+                preds_lst.append([user, item, self.model.predict(user, item).est])
+                
+        preds_df = pd.DataFrame(data=preds_lst, columns=['userID', 'itemID', 'prediction'])
+
+        # remove training data from prediction
+        tempdf = pd.concat(
+            [
+                self.data[['userID', 'itemID']],
+                pd.DataFrame(
+                    data=np.ones(self.data.shape[0]), columns=["dummycol"], index=self.data.index
+                ),
+            ],
+            axis=1,
+        )
+        merged = pd.merge(tempdf, preds_df, on=['userID', 'itemID'], how="outer")
+        return merged[merged["dummycol"].isnull()].drop("dummycol", axis=1).astype({'itemID': 'int32'}) 
+
+        '''
+        U, sigma, Vt = svds(self.ratings, k = 70)
+        sigma = np.diag(sigma)
+        all_user_predicted_ratings = np.dot(np.dot(U, sigma), Vt) + self.user_ratings_mean.reshape(-1, 1)
+
+        preds_df = pd.DataFrame(all_user_predicted_ratings, columns = self.ratings_df.columns)
+        preds_df.reset_index(inplace=True)
+        preds_df = pd.melt(preds_df, id_vars=['index'], var_name=['itemID'])
+        preds_df.columns = ['userID', 'itemID', 'prediction']
+
+        # remove training data from prediction
+        tempdf = pd.concat(
+            [
+                self.data[['userID', 'itemID']],
+                pd.DataFrame(
+                    data=np.ones(self.data.shape[0]), columns=["dummycol"], index=self.data.index
+                ),
+            ],
+            axis=1,
+        )
+        merged = pd.merge(tempdf, preds_df, on=['userID', 'itemID'], how="outer")
+        return merged[merged["dummycol"].isnull()].drop("dummycol", axis=1).astype({'itemID': 'int32'}) 
+        '''
